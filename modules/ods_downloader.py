@@ -1,53 +1,70 @@
-"""Module that downloads reports from ODS (HN) website"""
 
-import shlex
+
+# CUSTOM MODULES
+from base import clear
+from automateLite import EC, By, generate_puppies, initialize_chrome_session, downloader
+
+
+# ### REMOVE ###
+# from sys import path as exporter
+# exporter.append("/Users/dark/Documents/Dev/Python/completed")
+
+# from utils.modules.base import clear
+# from utils.modules.automateLite import (EC, By, generate_puppies, 
+#                                         initialize_chrome_session, downloader)
+# from traceback import print_exc
+# ### REMOVE ###
+
+from time import sleep
 from pathlib import Path
 from sys import exit, platform
-from time import perf_counter, sleep
-from subprocess import Popen, run, DEVNULL
+from argparse import ArgumentParser
 
-try:
-    from selenium import webdriver
-    from selenium.webdriver.common.by import By
-    from selenium.webdriver.chrome.options import Options as ChromeOptions
-    from selenium.webdriver.support.wait import WebDriverWait
-    from selenium.webdriver.support import expected_conditions as EC
-except (ImportError, ModuleNotFoundError):
-    print("\nModules are not installed!")
-    exit("Run 'pip install requirements.txt' in the terminal to fix errors.")
+
+parser = ArgumentParser(
+    prog="Predespacho Daemon",
+    description="Fetches files form the CND server.",
+    epilog="Let's demonize CNDz."
+)
+
+parser.add_argument("-p", "--port", type=int, default=9001)
+parser.add_argument("-b", "--binary", type=str, default="default")
+parser.add_argument("-m", "--mode", type=str, default="debug")
+args = parser.parse_args()
+
+if args.binary not in ("default", "undetected"):
+    exit(f"Invalid binary '{args.binary}'.")
+
+if args.mode not in ("debug", "release"):
+    exit(f"Invalid mode '{args.mode}'.")
 
 
 def clean_up():
     """
     Removes old failed downloads and backs up completed downloads.
     """
-    for file in runtime_path.iterdir():
-        file_name = file.name
-        if file.suffix == ".failed":
+    for file in temp_folder_path.iterdir():
+        if file.suffix not in (".xlsx", ".xls"):
             file.unlink()
-            print(f"Removed: {file_name}")
-        elif file.suffix in (".xlsx", ".xls"):
-            file.rename(target=backup_folder_path.joinpath(file_name))
-            print(f"Backed up: {file_name}")
+        else:
+            file.rename(target=backup_folder_path.joinpath(file.name))
 
 
-def downloader(file_name: str, file_url: str) -> None:
+def handler(file_name: str, file_url: str) -> None:
     """
     Downloads new predespacho documents.
     """
     try:
-        tic_dl = perf_counter()
         driver.get(file_url)
         wait.until(EC.title_is("Listado website"))
         wait.until(EC.element_to_be_clickable((By.XPATH, '//div[@class="t-fht-wrapper"]'))) # Table wrapper
         wait.until(EC.element_to_be_clickable((By.XPATH, '//div[@id="stickyTableHeader_1"]'))) # Table head
         wait.until(EC.element_to_be_clickable((By.XPATH, '//div[@class="t-fht-tbody"]'))) # Table body
-        print(f"URL load time: {int(perf_counter() - tic_dl)} seconds")
 
         all_table_rows = driver.find_element(By.XPATH, '//div[@class="t-fht-tbody"]').find_element(By.TAG_NAME, "tbody").find_elements(By.TAG_NAME, "tr")
         
         if len(all_table_rows) < 2:
-            return
+              return
 
         top_most_row = all_table_rows[1]
 
@@ -57,31 +74,11 @@ def downloader(file_name: str, file_url: str) -> None:
         document_download_url = document_data[1].find_element(By.TAG_NAME, "a").get_attribute("href")
 
         print(f"\nDownloading {formatted_name}, please wait...")
-
-        temp_destination_path = f"'{runtime_path}'" if platform == "win32" else runtime_path
-        download_command = f"curl --insecure --output {formatted_name} --output-dir {temp_destination_path} {document_download_url}"
-
-        # Launch the curler and get the job done
-        try:
-            with Popen(args=shlex.split(download_command), stderr=DEVNULL, shell=True if platform == "win32" else False) as curler:
-
-                is_done = curler.poll()
-                while is_done is None:
-                    sleep(1)
-                    is_done = curler.poll()
-
-                print(f"{formatted_name} successfully downloaded.")
-        except:
-            move_command = f"mv {runtime_path.joinpath(formatted_name)} {runtime_path.joinpath(f'{formatted_name}.failed')}"
-
-            # Rename failed downloads by appending a '.failed' suffix to their names
-            if platform == "win32": move_command = 'powershell -command ' + '"&{' + move_command + '}"'
-
-            run(args=shlex.split(move_command), stderr=DEVNULL, shell=True if platform == "win32" else False)
+        is_downloaded = downloader(destination_path=temp_folder_path, download_url=document_download_url, custom_file_name=formatted_name)
+        if not is_downloaded:
             print(f"{file_name} failed to download.")
-        finally:
-            curler.terminate()
-            curler.wait()
+        else:
+            print(f"{formatted_name} successfully downloaded.")
     except:
         print(f"\n{file_name} failed to download.")
 
@@ -89,46 +86,85 @@ def downloader(file_name: str, file_url: str) -> None:
 
 if __name__ == "__main__":
 
-    runtime_path: Path = Path(__file__).parent
-    backup_folder_path = runtime_path.joinpath("backup")
+    clear()
 
-    # Check for backup folder folder
+    # Core paths
+    runtime_path: Path = Path(__file__).parent
+    parent_runtime_path: Path = runtime_path.parent
+    desktop_path: Path = Path("~/Desktop").expanduser()
+
+    # Hidden runtime files
+    runtime_folder: Path = parent_runtime_path.joinpath(".runtime")
+
+    # User files
+    user_folder: Path = parent_runtime_path.joinpath("user")
+    backup_folder_path: Path = user_folder.joinpath("backup")
+    temp_folder_path: Path = user_folder.joinpath("temp")
+
+    # Unify chrome binaries
+    match args.binary:
+        case "default":
+            binary_executable_path: Path = runtime_folder.joinpath("chromedriver.exe" if platform == "win32" else "chromedriver")
+        case "undetected":
+            binary_executable_path: Path = runtime_folder.joinpath("undetected_chromedriver.exe" if platform == "win32" else "undetected_chromedriver")
+
+    # Sort runtime modes
+    is_debug: bool = True if args.mode == "debug" else False
+
+    # Check for backup folder
     if not backup_folder_path.is_dir():
         backup_folder_path.mkdir(parents=True, exist_ok=True)
 
-    tic = perf_counter()
-    options = ChromeOptions()
-    options.add_argument("--incognito")
-    options.add_argument("--headless")
-    options.add_argument("--blink-settings=imagesEnabled=false")
-    driver = webdriver.Chrome(options=options)
-    wait = WebDriverWait(driver, timeout=30)
-    print(f"Browser opening time: {int(perf_counter() - tic)} seconds")
+    # Check for temp folder
+    if not temp_folder_path.is_dir():
+        temp_folder_path.mkdir(parents=True, exist_ok=True)
 
     urlF = {
+        # "url" : "https://otr.ods.org.hn:3200/odsprd/f?p=110:4:::::p4_id:4",
         "url" : "https://appcnd.enee.hn:3200/odsprd/f?p=110:4:::::p4_id:4",
         "name" : "Predespacho Final",
     }
 
     urlS = {
+        # "url" : "https://otr.ods.org.hn:3200/odsprd/f?p=110:4:::::p4_id:5",
         "url" : "https://appcnd.enee.hn:3200/odsprd/f?p=110:4:::::p4_id:5",
         "name" : "Predespacho Semanal",
     }
 
+    # Launch the browser and get the job done
+    new_chrome = initialize_chrome_session(port=args.port, headless=True)
+    if not new_chrome:
+        exit()
+
+    try:
+        driver, wait, action = generate_puppies(
+            port=args.port, 
+            binary_executable_path=binary_executable_path, 
+            debug_mode=is_debug, 
+            load_images=False
+            )
+    except:
+        new_chrome.terminate()
+        new_chrome.wait()
+        exit()
+
     try:
         clean_up()
-        for i in (urlF, urlS):
+        for provider in (urlF, urlS):
+
             try:
-                tic_i = perf_counter()
-                downloader(file_name=i["name"], file_url=i["url"])
-                print(f"Runtime for {i['name']}: {int(perf_counter() - tic_i)} seconds")
+                handler(file_name=provider["name"], file_url=provider["url"])
             except KeyboardInterrupt:
                 print("\nInterrupted by user!")
             finally:
-                sleep(1)
+                sleep(3)
                 continue
     finally:
         driver.quit()
+        new_chrome.terminate()
+        new_chrome.wait()
         exit("Exiting.")
+
+
 
 
