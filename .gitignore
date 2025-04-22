@@ -17,9 +17,10 @@
 *.whl
 
 oddsjam_cookies.pkl
-update_combo.command
-update_cookies.command
-update_api_server.command
+update_[*].command
+# update_combo.command
+# update_cookies.command
+# update_api_server.command
 deeka-key
 
 *chromedriver
