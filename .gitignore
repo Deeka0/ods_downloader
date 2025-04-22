@@ -17,7 +17,7 @@
 *.whl
 
 oddsjam_cookies.pkl
-update_[*].command
+*update_[*].command
 # update_combo.command
 # update_cookies.command
 # update_api_server.command
