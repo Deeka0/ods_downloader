@@ -31,7 +31,8 @@ try:
     from selenium.common.exceptions import (ElementNotVisibleException, 
                                             StaleElementReferenceException, 
                                             NoSuchElementException, 
-                                            SessionNotCreatedException)
+                                            SessionNotCreatedException, 
+                                            WebDriverException)
 except (ImportError, ModuleNotFoundError):
     print("\nModules are not installed!")
     exit("Run 'pip install requirements.txt' in the terminal to fix errors.")
